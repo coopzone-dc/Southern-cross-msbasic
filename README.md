@@ -5,6 +5,8 @@ basic and use the bit-banged serial port at 9600b
 
 It does not need any additional hardware or modifications to the SBC
 
+See the HOWTO.md file for instructions on using the files.
+
 Issues and limitations.
 
 Serial I/O has no hardware flow control, so you will need to set delays for character and end of line to be
