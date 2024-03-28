@@ -27,5 +27,7 @@ this files can be loaded into the programmer and used
 
 Step 4 program the eprom 
 
+It's alsoo possible to use the scbasic.hex or the scbasic.bin (converted binary file from hex file)
+
 have fun
 
