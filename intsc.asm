@@ -1,7 +1,6 @@
 ;==================================================================================
-; Contents of this file are copyright Grant Searle
 ; Modified to use BIT Banged Serial port on Southern Cross SBC by Derek Cooper 27.03.24
-;
+; Contains some code from several others, including Grant Searle and Craig Jones.
 ;==================================================================================
 
 KEYBUF	.EQU	86H	;KEYBOARD BUFFER
