@@ -1,0 +1,291 @@
+0001   0000             ;==================================================================================
+0002   0000             ; Contents of this file are copyright Grant Searle
+0003   0000             ; Modified to use BIT Banged Serial port on Southern Cross SBC by Derek Cooper 27.03.24
+0004   0000             ;
+0005   0000             ;==================================================================================
+0006   0000             
+0007   0000             KEYBUF	.EQU	86H	;KEYBOARD BUFFER
+0008   0000             SCAN	.EQU	85H	;DISPLAY SCAN LATCH
+0009   0000             ;
+0010   0000             ; BIT BANG BAUD RATE CONSTANTS
+0011   0000             ;
+0012   0000             B300	.EQU	0220H	;300 BAUD
+0013   0000             B1200	.EQU	0080H	;1200 BAUD
+0014   0000             B2400	.EQU	003FH	;2400 BAUD
+0015   0000             B4800	.EQU	001BH	;4800 BAUD
+0016   0000             B9600	.EQU	000BH	;9600 BAUD
+0017   0000             
+0018   0000             TEMPSTACK       .EQU    $20ED ; Top of BASIC line input buffer so is "free ram" when BASIC resets
+0019   0000             serBuf          .EQU    $2000
+0020   0000             serFlag         .EQU    $2001
+0021   0000             basicStarted	.EQU	$2002
+0022   0000             
+0023   0000             CR              .EQU	0DH
+0024   0000             LF              .EQU	0AH
+0025   0000             CL		.EQU	0CH
+0026   0000             
+0027   0000             warmb		.equ	$0203	;warm boot basic
+0028   0000             coldb		.equ	$0200	;cold boot into basic
+0029   0000             ;------------------------------------------------------------------------------
+0030   0000             ; Reset
+0031   0000             
+0032   0000                             .ORG	$0000
+0033   0000 F3          RST00		di                       ;Disable interrupts
+0034   0001 C3 D0 00    		jp       INIT            ;Initialize Hardware and go
+0035   0004             
+0036   0004             ;------------------------------------------------------------------------------
+0037   0004             ; TX a character over RS232 
+0038   0004             
+0039   0008                             .ORG     0008H
+0040   0008 C3 A5 00    RST08            jp      TXA
+0041   000B             
+0042   000B             ;------------------------------------------------------------------------------
+0043   000B             ; RX a character over RS232 Channel A [Console], hold here until char ready.
+0044   000B             
+0045   0010                             .ORG 0010H
+0046   0010 C3 3A 00    RST10            jp      RXA
+0047   0013             
+0048   0013             ;------------------------------------------------------------------------------
+0049   0013             ; Check serial status
+0050   0013             
+0051   0018                             .ORG 0018H
+0052   0018 C3 7A 00    RST18            jp      CKINCHAR
+0053   001B             
+0054   001B             ;------------------------------------------------------------------------------
+0055   001B             ; RST 38 - INTERRUPT VECTOR [ for IM 1 ]
+0056   001B             
+0057   0038                             .ORG     0038H
+0058   0038 F3          RST38            di
+0059   0039 C9          		 ret
+0060   003A             
+0061   003A             ;------------------------------------------------------------------------------
+0062   003A             ; SERIAL RECEIVE ROUTINE
+0063   003A             ;-----------------------
+0064   003A             ;RECEIVE SERIAL BYTE FROM DIN
+0065   003A             ;
+0066   003A             ; ENTRY : NONE
+0067   003A             ;  EXIT : A= RECEIVED BYTE IF CARRY CLEAR
+0068   003A             ;
+0069   003A             ; REGISTERS MODIFIED A AND F
+0070   003A             ;
+0071   003A C5          RXA:		push	bc
+0072   003B E5          		push	hl
+0073   003C             ;
+0074   003C             ; WAIT FOR START BIT
+0075   003C             ;
+0076   003C 3A 01 20    	ld	a,(serFlag)	; do we already have a byte
+0077   003F B7          	or	a
+0078   0040 28 09       	jr	z,RXDAT1	; no current data so wait as normal
+0079   0042 AF          	xor	a
+0080   0043 32 01 20    	ld	(serFlag),a	; we have used up all bytes, set flag to say buf empty
+0081   0046 3A 00 20    	ld	a,(serBuf)	; get the key
+0082   0049 18 19       	jr	RXDONE
+0083   004B             	
+0084   004B DB 86       RXDAT1	in	a,(KEYBUF)
+0085   004D CB 7F       	bit	7,a
+0086   004F 20 FA       	jr	nz,RXDAT1	;NO START BIT
+0087   0051             ;
+0088   0051             ; DETECTED START BIT
+0089   0051             ;
+0090   0051 21 0B 00    	ld	hl,B9600	;get the baud rate
+0091   0054 CB 3C       	srl	h
+0092   0056 CB 1D       	rr	l	;DELAY FOR HALF BIT TIME
+0093   0058 CD 16 01    	call	BITIME
+0094   005B DB 86       	in	a,(KEYBUF)
+0095   005D CB 7F       	bit	7,a
+0096   005F 20 EA       	jr	nz,RXDAT1	;START BIT NOT VALID
+0097   0061             ;
+0098   0061             ; DETECTED VALID START BIT,READ IN DATA
+0099   0061             ;
+0100   0061 CD 68 00    	call	rxdata
+0101   0064 B7          RXDONE	or	a	;CLEAR CARRY FLAG
+0102   0065 E1          	pop	hl
+0103   0066 C1          	pop	bc
+0104   0067 C9          	ret
+0105   0068             
+0106   0068             ; read all 8 bits
+0107   0068 06 08       rxdata	ld	b,08H
+0108   006A 21 0B 00    RXDAT2	ld	hl,B9600
+0109   006D CD 16 01    	call	BITIME	;DELAY ONE BIT TIME
+0110   0070 DB 86       	in	a,(KEYBUF)
+0111   0072 CB 17       	rl	a
+0112   0074 CB 19       	rr	c	;SHIFT BIT INTO DATA REG
+0113   0076 10 F2       	djnz	RXDAT2
+0114   0078 79          	ld	a,c
+0115   0079 C9          	ret
+0116   007A             
+0117   007A             CKINCHAR
+0118   007A C5                  push	BC
+0119   007B E5          	push	HL
+0120   007C DB 86       	in	a,(KEYBUF)	;see if it looks like a start bit
+0121   007E CB 7F       	bit	7,a
+0122   0080 20 1F       	jr	nz,ckinchar1	;no key pressed exit
+0123   0082             		;
+0124   0082             ; DETECTED START BIT
+0125   0082 21 0B 00       	ld	hl,B9600
+0126   0085 CB 3C              	srl     h
+0127   0087 CB 1D              	rr      l       ;DELAY FOR HALF BIT TIME
+0128   0089 CD 16 01           	call    BITIME
+0129   008C DB 86              	in      a,(KEYBUF)
+0130   008E CB 7F              	bit     7,a
+0131   0090 20 0F              	jr      nz,ckinchar1       ;START BIT NOT VALID
+0132   0092             ;
+0133   0092             ; DETECTED VALID START BIT,READ IN DATA
+0134   0092             ;
+0135   0092 CD 68 00    	call	rxdata
+0136   0095 32 00 20            ld	(serBuf),a	;keep for later
+0137   0098 3E FF       	ld	a,0ffh
+0138   009A 32 01 20    	ld	(serFlag),a	;say we have a byte
+0139   009D B7          	or	a		;found a char (nz)
+0140   009E E1                  pop	hl
+0141   009F C1                  pop	bc
+0142   00A0 C9                  ret
+0143   00A1             ckinchar1
+0144   00A1 AF          	xor	a	; set z flag
+0145   00A2 E1          	pop	hl
+0146   00A3 C1          	pop	bc
+0147   00A4 C9                  ret
+0148   00A5             	
+0149   00A5             ;------------------------------------------------------------------------------
+0150   00A5             ;------------------------
+0151   00A5             ; SERIAL TRANSMIT ROUTINE
+0152   00A5             ;------------------------
+0153   00A5             ;TRANSMIT BYTE SERIALLY ON DOUT
+0154   00A5             ;
+0155   00A5             ; ENTRY : A = BYTE TO TRANSMIT
+0156   00A5             ;  EXIT : NO REGISTERS MODIFIED
+0157   00A5             ;
+0158   00A5 F5          TXA:	PUSH	AF
+0159   00A6 C5          	PUSH	BC
+0160   00A7 E5          	PUSH	HL
+0161   00A8 21 0B 00    	LD	HL,B9600
+0162   00AB 4F          	LD	C,A
+0163   00AC             ;
+0164   00AC             ; TRANSMIT START BIT
+0165   00AC             ;
+0166   00AC AF          	XOR	A
+0167   00AD D3 85       	OUT	(SCAN),A
+0168   00AF CD 16 01    	CALL	BITIME
+0169   00B2             ;
+0170   00B2             ; TRANSMIT DATA
+0171   00B2             ;
+0172   00B2             
+0173   00B2 06 08       	LD	B,08H
+0174   00B4 CB 09       	RRC	C
+0175   00B6 CB 09       NXTBIT	RRC	C	;SHIFT BITS TO D6,
+0176   00B8 79          	LD	A,C	;LSB FIRST AND OUTPUT
+0177   00B9 E6 40       	AND	40H	;THEM FOR ONE BIT TIME.
+0178   00BB D3 85       	OUT	(SCAN),A
+0179   00BD CD 16 01    	CALL	BITIME
+0180   00C0 10 F4       	DJNZ	NXTBIT
+0181   00C2             ;
+0182   00C2             ; SEND STOP BITS
+0183   00C2             ;
+0184   00C2 3E 40       	LD	A,40H
+0185   00C4 D3 85       	OUT	(SCAN),A
+0186   00C6 CD 16 01    	CALL	BITIME
+0187   00C9 CD 16 01    	CALL	BITIME
+0188   00CC E1          	POP	HL
+0189   00CD C1          	POP	BC
+0190   00CE F1          	POP	AF
+0191   00CF C9          	RET
+0192   00D0             ;
+0193   00D0             INIT:
+0194   00D0 3E 40       	ld	a,40H
+0195   00D2 D3 85       	out	(SCAN),a	;TURN OFF THE DISPLAY MAKE SERIAL TX HIGH
+0196   00D4 21 ED 20            ld 	hl,TEMPSTACK    ; Temp stack
+0197   00D7 F9          	ld	sp,hl
+0198   00D8 AF          	xor	a		;send break until terminal is in sync
+0199   00D9 47          	ld	b,a
+0200   00DA CF          waste:	RST	08H             ; Print it
+0201   00DB 10 FD       	djnz	waste
+0202   00DD                 
+0203   00DD 21 2B 01            LD        HL,SIGNON1      ; Sign-on message
+0204   00E0 CD 23 01            CALL      PRINT           ; Output string
+0205   00E3                     
+0206   00E3 3A 02 20            LD        A,(basicStarted); Check the BASIC STARTED flag
+0207   00E6 FE 59               CP        'Y'             ; to see if this is power-up
+0208   00E8 20 16               JR        NZ,COLDSTART    ; If not BASIC started then always do cold start
+0209   00EA 21 6B 01            LD        HL,SIGNON2      ; Cold/warm message
+0210   00ED CD 23 01            CALL      PRINT           ; Output string
+0211   00F0             CORW:
+0212   00F0 CD 3A 00            CALL      RXA
+0213   00F3 E6 DF               AND       %11011111       ; lower to uppercase
+0214   00F5 FE 43               CP        'C'
+0215   00F7 20 0F               JR        NZ, CHECKWARM
+0216   00F9 CF                  RST       08H
+0217   00FA 3E 0D               LD        A,$0D
+0218   00FC CF                  RST       08H
+0219   00FD 3E 0A               LD        A,$0A
+0220   00FF CF                  RST       08H
+0221   0100             COLDSTART:
+0222   0100 3E 59               LD        A,'Y'           ; Set the BASIC STARTED flag
+0223   0102 32 02 20            LD        (basicStarted),A
+0224   0105 C3 00 02            JP        coldb           ; Start BASIC COLD
+0225   0108             CHECKWARM:
+0226   0108 FE 57               CP        'W'
+0227   010A 20 E4               JR        NZ, CORW
+0228   010C CF                  RST       08H
+0229   010D 3E 0D               LD        A,$0D
+0230   010F CF                  RST       08H
+0231   0110 3E 0A               LD        A,$0A
+0232   0112 CF                  RST       08H
+0233   0113 C3 03 02            JP        warmb           ; Start BASIC WARM
+0234   0116             
+0235   0116             ;
+0236   0116             ;---------------
+0237   0116             ; BIT TIME DELAY
+0238   0116             ;---------------
+0239   0116             ;DELAY FOR ONE SERIAL BIT TIME
+0240   0116             ;ENTRY : HL = DELAY TIME
+0241   0116             ; NO REGISTERS MODIFIED
+0242   0116             ;
+0243   0116 E5          BITIME	PUSH	HL
+0244   0117 D5          	PUSH	DE
+0245   0118 11 01 00    	LD	DE,0001H
+0246   011B ED 52       BITIM1	SBC	HL,DE
+0247   011D D2 1B 01    	JP	NC,BITIM1
+0248   0120 D1          	POP	DE
+0249   0121 E1          	POP	HL
+0250   0122 C9          	RET
+0251   0123             ;
+0252   0123             ;------------------------------------------------------------------------------
+0253   0123 7E          PRINT:  LD       A,(HL)          ; Get character
+0254   0124 B7                  OR       A               ; Is it $00 ?
+0255   0125 C8                  RET      Z               ; Then RETurn on terminator
+0256   0126 CF                  RST      08H             ; Print it
+0257   0127 23                  INC      HL              ; Next Character
+0258   0128 18 F9               JR       PRINT           ; Continue until $00
+0259   012A C9                  RET
+0260   012B             ;------------------------------------------------------------------------------
+0261   012B             
+0262   012B 0C 0D 0A 5A SIGNON1:	.BYTE   CL,CR,LF,"Z80 Southern Cross MSBasic",CR,LF
+0262   012F 38 30 20 53 
+0262   0133 6F 75 74 68 
+0262   0137 65 72 6E 20 
+0262   013B 43 72 6F 73 
+0262   013F 73 20 4D 53 
+0262   0143 42 61 73 69 
+0262   0147 63 0D 0A 
+0263   014A 42 61 73 65 		.BYTE	"Based on work by Grant Searle.",CR,LF,0
+0263   014E 64 20 6F 6E 
+0263   0152 20 77 6F 72 
+0263   0156 6B 20 62 79 
+0263   015A 20 47 72 61 
+0263   015E 6E 74 20 53 
+0263   0162 65 61 72 6C 
+0263   0166 65 2E 0D 0A 
+0263   016A 00 
+0264   016B 0D 0A       SIGNON2:	.BYTE   CR,LF
+0265   016D 43 6F 6C 64 		.BYTE   "Cold or warm start (C or W)? ",0
+0265   0171 20 6F 72 20 
+0265   0175 77 61 72 6D 
+0265   0179 20 73 74 61 
+0265   017D 72 74 20 28 
+0265   0181 43 20 6F 72 
+0265   0185 20 57 29 3F 
+0265   0189 20 00 
+0266   018B                           
+0267   018B             	.END
+0268   018B             
+tasm: Number of errors = 0
