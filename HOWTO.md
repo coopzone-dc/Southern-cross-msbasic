@@ -16,18 +16,18 @@ Depending on your programmer, it should be possible to just load the two files a
 them ready to write the eprom. You need to get the intsc file to load at 0000 and the basic file to
 load at 0200.
 
-To procude a single file scbasic.hex; edit the intsc.hex file and delete the 'end of file' record IE
+To produce a single file scbasic.hex; edit the intsc.hex file and delete the 'end of file' record IE
 the last line, looks like :00000001FF
 
 now copy the files or cat them (linux) to one file.
 
 cat intsc.hex basic.hex > scbasic.hex
 
-this files can be loaded into the programmer and used
+this file can be loaded into the programmer and used
 
 Step 4 program the eprom 
 
 It's alsoo possible to use the scbasic.hex or the scbasic.bin (converted binary file from hex file)
 
-have fun
+Have fun
 
